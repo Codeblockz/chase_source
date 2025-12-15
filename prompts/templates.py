@@ -20,13 +20,13 @@ Your task is to identify ONE factual sub-claim that can be verified through exte
 
 ## Output Format
 
-{
+{{
   "claim": "The extracted factual claim as a declarative sentence",
   "original_context": "The portion of input text this claim was derived from",
   "extraction_confidence": "high|medium|low",
   "extraction_notes": "Optional notes about extraction difficulty",
   "extraction_failed": false
-}"""
+}}"""
 
 CLAIM_EXTRACTION_USER = """Extract a factual claim from the following text:
 
@@ -48,10 +48,10 @@ SOURCE_CLASSIFICATION_SYSTEM = """You are a source classifier for fact-checking.
 4. **unknown** - Cannot determine
 
 ## Output Format
-{
+{{
   "source_type": "primary|original_reporting|secondary|unknown",
   "reasoning": "Brief explanation"
-}"""
+}}"""
 
 SOURCE_CLASSIFICATION_USER = """Classify this source:
 
@@ -73,12 +73,12 @@ EVIDENCE_RELEVANCE_SYSTEM = """You are an evidence relevance assessor for fact-c
 - 0.0-0.19: Not relevant
 
 ## Output Format
-{
+{{
   "is_relevant": true|false,
   "relevance_score": 0.0-1.0,
   "verbatim_quote": "Exact text from source or null",
   "relevance_explanation": "Why this is or isn't relevant"
-}"""
+}}"""
 
 EVIDENCE_RELEVANCE_USER = """Assess the relevance of this source to the claim.
 
@@ -104,10 +104,10 @@ SOURCE_ATTRIBUTION_SYSTEM = """You are a source attribution classifier.
 Focus on TEXTUAL relationship, not truth assessment.
 
 ## Output Format
-{
+{{
   "attribution": "direct|paraphrase|contradiction",
   "reasoning": "Explanation showing textual comparison"
-}"""
+}}"""
 
 SOURCE_ATTRIBUTION_USER = """Classify how this source relates to the claim.
 
@@ -133,11 +133,11 @@ ATTRIBUTION_ASSEMBLY_SYSTEM = """You are a source attribution assembler.
 PREFER NOT_FOUND over fabricated attribution.
 
 ## Output Format
-{
+{{
   "attribution": "direct|paraphrase|contradiction|not_found",
   "summary": "2-3 sentence explanation",
   "relies_on_secondary_only": true|false
-}"""
+}}"""
 
 ATTRIBUTION_ASSEMBLY_USER = """Determine the final source attribution.
 
