@@ -1,0 +1,15 @@
+# Use with: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - /app/venv  # Exclude venv from mount
+    environment:
+      - LOG_LEVEL=DEBUG
+      - GRADIO_WATCH=true
+    command: ["python", "-u", "app.py"]
