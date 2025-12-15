@@ -4,11 +4,18 @@ Application configuration.
 
 from functools import lru_cache
 
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment."""
+
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",  # Ignore extra env vars
+    )
 
     # API Keys
     openai_api_key: str
@@ -27,10 +34,6 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     gradio_server_port: int = 7860
     gradio_server_name: str = "0.0.0.0"
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 
 @lru_cache
