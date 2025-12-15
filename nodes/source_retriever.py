@@ -41,10 +41,20 @@ def retrieve_sources(state: GraphState) -> GraphState:
         )
 
         results = []
+        seen_urls = set()
+
         for item in response.get("results", []):
             try:
+                url = item["url"]
+
+                # Skip duplicate URLs
+                if url in seen_urls:
+                    logger.debug(f"Skipping duplicate URL: {url}")
+                    continue
+                seen_urls.add(url)
+
                 result = SearchResult(
-                    url=item["url"],
+                    url=url,
                     title=item.get("title", ""),
                     content=item.get("content", ""),
                     score=item.get("score", 0.0),
@@ -56,7 +66,7 @@ def retrieve_sources(state: GraphState) -> GraphState:
                 logger.warning(f"Skipping malformed result: {e}")
                 continue
 
-        logger.info(f"Retrieved {len(results)} search results")
+        logger.info(f"Retrieved {len(results)} unique search results")
         return {**state, "search_results": results, "search_query": search_query}
 
     except Exception as e:

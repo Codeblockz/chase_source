@@ -1,7 +1,8 @@
 """
-Evidence filtering node.
+Evidence filtering node with parallel processing.
 """
 
+import asyncio
 import logging
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -48,32 +49,81 @@ relevance_prompt = ChatPromptTemplate.from_messages([
 relevance_chain = relevance_prompt | relevance_llm
 
 
-def classify_source(url: str, title: str, content: str) -> SourceType:
-    """Classify source type using LLM."""
+async def assess_and_classify(claim: str, result: SearchResult) -> Evidence | None:
+    """Assess relevance and classify source in parallel."""
     try:
-        result: SourceClassificationResponse = classification_chain.invoke({
-            "url": url,
-            "title": title,
-            "content": content[:1000],
-        })
-        return SourceType(result.source_type)
-    except Exception as e:
-        logger.warning(f"Source classification failed: {e}")
-        return SourceType.UNKNOWN
-
-
-def assess_relevance(claim: str, result: SearchResult) -> EvidenceRelevanceResponse | None:
-    """Assess relevance and extract evidence from a search result."""
-    try:
-        return relevance_chain.invoke({
+        # Run relevance and classification in parallel
+        relevance_task = relevance_chain.ainvoke({
             "claim": claim,
             "url": str(result.url),
             "title": result.title,
             "content": result.content[:3000],
         })
+        classification_task = classification_chain.ainvoke({
+            "url": str(result.url),
+            "title": result.title,
+            "content": result.content[:1000],
+        })
+
+        relevance_result, classification_result = await asyncio.gather(
+            relevance_task, classification_task
+        )
+
+        # Check relevance criteria
+        if not relevance_result.is_relevant:
+            logger.debug(f"Filtered out: {result.title} (not relevant)")
+            return None
+
+        if relevance_result.relevance_score < 0.5:
+            logger.debug(f"Filtered out: {result.title} (low score)")
+            return None
+
+        if not relevance_result.verbatim_quote:
+            logger.debug(f"Filtered out: {result.title} (no quote)")
+            return None
+
+        source_type = SourceType(classification_result.source_type)
+
+        evidence = Evidence(
+            source_url=result.url,
+            source_title=result.title,
+            source_type=source_type,
+            verbatim_quote=relevance_result.verbatim_quote,
+            relevance_score=relevance_result.relevance_score,
+            relevance_explanation=relevance_result.relevance_explanation,
+        )
+        logger.info(f"Found evidence: {result.title} ({source_type.value})")
+        return evidence
+
     except Exception as e:
-        logger.warning(f"Relevance assessment failed: {e}")
+        logger.warning(f"Evidence assessment failed for {result.title}: {e}")
         return None
+
+
+async def filter_evidence_async(state: GraphState) -> GraphState:
+    """Filter search results for relevant evidence using parallel processing."""
+    claim = state.get("extracted_claim")
+    results = state.get("search_results", [])
+
+    if not claim or not results:
+        logger.warning("No claim or search results to filter")
+        return {**state, "evidence": []}
+
+    claim_text = claim.claim
+
+    # Process all results in parallel
+    tasks = [assess_and_classify(claim_text, result) for result in results]
+    evidence_results = await asyncio.gather(*tasks)
+
+    # Filter out None results and sort by relevance
+    evidence_list = [e for e in evidence_results if e is not None]
+    evidence_list.sort(key=lambda e: e.relevance_score, reverse=True)
+
+    # Limit to top 5
+    evidence_list = evidence_list[:5]
+
+    logger.info(f"Filtered to {len(evidence_list)} evidence items")
+    return {**state, "evidence": evidence_list}
 
 
 def filter_evidence(state: GraphState) -> GraphState:
@@ -86,59 +136,4 @@ def filter_evidence(state: GraphState) -> GraphState:
     Returns:
         Updated state with filtered evidence list
     """
-    claim = state.get("extracted_claim")
-    results = state.get("search_results", [])
-
-    if not claim or not results:
-        logger.warning("No claim or search results to filter")
-        return {**state, "evidence": []}
-
-    claim_text = claim.claim
-    evidence_list = []
-
-    for result in results:
-        # Assess relevance
-        assessment = assess_relevance(claim_text, result)
-        if not assessment:
-            continue
-
-        if not assessment.is_relevant:
-            logger.debug(f"Filtered out: {result.title} (not relevant)")
-            continue
-
-        if assessment.relevance_score < 0.5:
-            logger.debug(f"Filtered out: {result.title} (low score)")
-            continue
-
-        if not assessment.verbatim_quote:
-            logger.debug(f"Filtered out: {result.title} (no quote)")
-            continue
-
-        # Classify source type
-        source_type = classify_source(str(result.url), result.title, result.content)
-
-        # Build evidence object
-        try:
-            evidence = Evidence(
-                source_url=result.url,
-                source_title=result.title,
-                source_type=source_type,
-                verbatim_quote=assessment.verbatim_quote,
-                relevance_score=assessment.relevance_score,
-                relevance_explanation=assessment.relevance_explanation,
-            )
-            evidence_list.append(evidence)
-            logger.info(f"Found evidence: {result.title} ({source_type.value})")
-        except Exception as e:
-            logger.warning(f"Failed to create evidence object: {e}")
-            continue
-
-        # Limit to top 5 evidence items
-        if len(evidence_list) >= 5:
-            break
-
-    # Sort by relevance score
-    evidence_list.sort(key=lambda e: e.relevance_score, reverse=True)
-
-    logger.info(f"Filtered to {len(evidence_list)} evidence items")
-    return {**state, "evidence": evidence_list}
+    return asyncio.run(filter_evidence_async(state))

@@ -1,7 +1,8 @@
 """
-Source comparison node.
+Source comparison node with parallel processing.
 """
 
+import asyncio
 import logging
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -33,27 +34,54 @@ prompt = ChatPromptTemplate.from_messages([
 chain = prompt | structured_llm
 
 
-def classify_source_attribution(
+async def classify_source_attribution_async(
     claim: str, evidence: Evidence
 ) -> EvidenceAssessment | None:
-    """Classify how a single source relates to the claim."""
+    """Classify how a single source relates to the claim (async)."""
     try:
-        result: SourceAttributionResponse = chain.invoke({
+        result: SourceAttributionResponse = await chain.ainvoke({
             "claim": claim,
             "source_title": evidence.source_title,
             "source_type": evidence.source_type.value,
             "verbatim_quote": evidence.verbatim_quote,
         })
 
-        return EvidenceAssessment(
+        assessment = EvidenceAssessment(
             evidence=evidence,
             attribution=result.attribution,
             reasoning=result.reasoning,
         )
+        logger.info(f"Attribution: {evidence.source_title} -> {result.attribution}")
+        return assessment
 
     except Exception as e:
         logger.warning(f"Source attribution failed: {e}")
         return None
+
+
+async def compare_sources_async(state: GraphState) -> GraphState:
+    """Classify how all sources relate to the claim using parallel processing."""
+    claim = state.get("extracted_claim")
+    evidence_list = state.get("evidence", [])
+
+    if not claim or not evidence_list:
+        logger.warning("No claim or evidence to compare")
+        return {**state, "assessments": []}
+
+    claim_text = claim.claim
+
+    # Process all evidence in parallel
+    tasks = [
+        classify_source_attribution_async(claim_text, evidence)
+        for evidence in evidence_list
+    ]
+    assessment_results = await asyncio.gather(*tasks)
+
+    # Filter out None results
+    assessments = [a for a in assessment_results if a is not None]
+
+    logger.info(f"Completed {len(assessments)} source attributions")
+    return {**state, "assessments": assessments}
 
 
 def compare_sources(state: GraphState) -> GraphState:
@@ -66,23 +94,4 @@ def compare_sources(state: GraphState) -> GraphState:
     Returns:
         Updated state with assessments
     """
-    claim = state.get("extracted_claim")
-    evidence_list = state.get("evidence", [])
-
-    if not claim or not evidence_list:
-        logger.warning("No claim or evidence to compare")
-        return {**state, "assessments": []}
-
-    claim_text = claim.claim
-    assessments = []
-
-    for evidence in evidence_list:
-        assessment = classify_source_attribution(claim_text, evidence)
-        if assessment:
-            assessments.append(assessment)
-            logger.info(
-                f"Attribution: {evidence.source_title} -> {assessment.attribution}"
-            )
-
-    logger.info(f"Completed {len(assessments)} source attributions")
-    return {**state, "assessments": assessments}
+    return asyncio.run(compare_sources_async(state))

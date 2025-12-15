@@ -3,7 +3,7 @@ Unit tests for evidence filtering node.
 """
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 from nodes.evidence_filter import filter_evidence
 from schemas.models import (
@@ -35,13 +35,13 @@ class TestEvidenceFilter:
 
         with patch("nodes.evidence_filter.relevance_chain") as mock_rel, \
              patch("nodes.evidence_filter.classification_chain") as mock_class:
-            # Return different responses for different calls
-            mock_rel.invoke.side_effect = [
+            # Return different responses for different calls (async)
+            mock_rel.ainvoke = AsyncMock(side_effect=[
                 mock_relevance_response,
                 mock_relevance_response,
                 low_relevance,
-            ]
-            mock_class.invoke.return_value = mock_classification_response
+            ])
+            mock_class.ainvoke = AsyncMock(return_value=mock_classification_response)
 
             state = {
                 **initial_graph_state,
@@ -91,8 +91,8 @@ class TestEvidenceFilter:
 
         with patch("nodes.evidence_filter.relevance_chain") as mock_rel, \
              patch("nodes.evidence_filter.classification_chain") as mock_class:
-            mock_rel.invoke.return_value = mock_relevance_response
-            mock_class.invoke.return_value = mock_classification_response
+            mock_rel.ainvoke = AsyncMock(return_value=mock_relevance_response)
+            mock_class.ainvoke = AsyncMock(return_value=mock_classification_response)
 
             state = {
                 **initial_graph_state,
