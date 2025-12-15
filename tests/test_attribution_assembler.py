@@ -2,19 +2,17 @@
 Unit tests for attribution assembly node.
 """
 
-import json
-
 import pytest
 from unittest.mock import patch
 
 from nodes.attribution_assembler import assemble_attribution
 from schemas.models import (
+    AttributionAssemblyResponse,
     AttributionType,
     Evidence,
     EvidenceAssessment,
     SourceType,
 )
-from tests.conftest import create_mock_openai_response
 
 
 class TestAttributionAssembler:
@@ -22,21 +20,15 @@ class TestAttributionAssembler:
 
     @pytest.mark.unit
     def test_assembles_direct_attribution(
-        self, sample_extracted_claim, sample_assessments, initial_graph_state
+        self,
+        sample_extracted_claim,
+        sample_assessments,
+        initial_graph_state,
+        mock_assembly_response,
     ):
         """Should produce DIRECT attribution for direct evidence."""
-        mock_response = create_mock_openai_response(
-            json.dumps(
-                {
-                    "attribution": "direct",
-                    "summary": "Evidence directly supports the claim.",
-                    "relies_on_secondary_only": False,
-                }
-            )
-        )
-
-        with patch("nodes.attribution_assembler.client") as mock_client:
-            mock_client.chat.completions.create.return_value = mock_response
+        with patch("nodes.attribution_assembler.chain") as mock_chain:
+            mock_chain.invoke.return_value = mock_assembly_response
 
             state = {
                 **initial_graph_state,
@@ -96,18 +88,14 @@ class TestAttributionAssembler:
             reasoning="Blog confirms claim",
         )
 
-        mock_response = create_mock_openai_response(
-            json.dumps(
-                {
-                    "attribution": "paraphrase",
-                    "summary": "Only secondary sources available.",
-                    "relies_on_secondary_only": True,
-                }
-            )
+        mock_response = AttributionAssemblyResponse(
+            attribution="paraphrase",
+            summary="Only secondary sources available.",
+            relies_on_secondary_only=True,
         )
 
-        with patch("nodes.attribution_assembler.client") as mock_client:
-            mock_client.chat.completions.create.return_value = mock_response
+        with patch("nodes.attribution_assembler.chain") as mock_chain:
+            mock_chain.invoke.return_value = mock_response
 
             state = {
                 **initial_graph_state,

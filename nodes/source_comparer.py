@@ -2,17 +2,35 @@
 Source comparison node.
 """
 
-import json
 import logging
 
-from openai import OpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 
 from config import settings
 from prompts.templates import SOURCE_ATTRIBUTION_SYSTEM, SOURCE_ATTRIBUTION_USER
-from schemas.models import Evidence, EvidenceAssessment, GraphState
+from schemas.models import (
+    Evidence,
+    EvidenceAssessment,
+    GraphState,
+    SourceAttributionResponse,
+)
 
 logger = logging.getLogger(__name__)
-client = OpenAI(api_key=settings.openai_api_key)
+
+llm = ChatOpenAI(
+    model=settings.openai_model,
+    temperature=0.0,
+    api_key=settings.openai_api_key,
+)
+structured_llm = llm.with_structured_output(SourceAttributionResponse)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", SOURCE_ATTRIBUTION_SYSTEM),
+    ("user", SOURCE_ATTRIBUTION_USER),
+])
+
+chain = prompt | structured_llm
 
 
 def classify_source_attribution(
@@ -20,31 +38,17 @@ def classify_source_attribution(
 ) -> EvidenceAssessment | None:
     """Classify how a single source relates to the claim."""
     try:
-        response = client.chat.completions.create(
-            model=settings.openai_model,
-            temperature=0.0,
-            max_tokens=1000,
-            messages=[
-                {"role": "system", "content": SOURCE_ATTRIBUTION_SYSTEM},
-                {
-                    "role": "user",
-                    "content": SOURCE_ATTRIBUTION_USER.format(
-                        claim=claim,
-                        source_title=evidence.source_title,
-                        source_type=evidence.source_type.value,
-                        verbatim_quote=evidence.verbatim_quote,
-                    ),
-                },
-            ],
-            response_format={"type": "json_object"},
-        )
-
-        result = json.loads(response.choices[0].message.content)
+        result: SourceAttributionResponse = chain.invoke({
+            "claim": claim,
+            "source_title": evidence.source_title,
+            "source_type": evidence.source_type.value,
+            "verbatim_quote": evidence.verbatim_quote,
+        })
 
         return EvidenceAssessment(
             evidence=evidence,
-            attribution=result["attribution"],
-            reasoning=result["reasoning"],
+            attribution=result.attribution,
+            reasoning=result.reasoning,
         )
 
     except Exception as e:

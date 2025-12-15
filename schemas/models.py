@@ -50,6 +50,18 @@ class ExtractedClaim(BaseModel):
     extraction_notes: str | None = None
 
 
+class ClaimExtractionResponse(BaseModel):
+    """LLM response for claim extraction."""
+
+    claim: str | None = Field(description="The extracted factual claim")
+    original_context: str | None = Field(description="The portion of input text")
+    extraction_confidence: Literal["high", "medium", "low"] | None = Field(
+        description="Confidence level"
+    )
+    extraction_notes: str | None = Field(description="Notes about extraction")
+    extraction_failed: bool = Field(description="Whether extraction failed")
+
+
 # === Search Models ===
 
 
@@ -78,6 +90,40 @@ class EvidenceAssessment(BaseModel):
     evidence: Evidence
     attribution: Literal["direct", "paraphrase", "contradiction"]
     reasoning: str
+
+
+# === LLM Response Models ===
+
+
+class SourceClassificationResponse(BaseModel):
+    """LLM response for source classification."""
+
+    source_type: Literal["primary", "original_reporting", "secondary", "unknown"]
+    reasoning: str
+
+
+class EvidenceRelevanceResponse(BaseModel):
+    """LLM response for evidence relevance assessment."""
+
+    is_relevant: bool
+    relevance_score: float = Field(ge=0.0, le=1.0)
+    verbatim_quote: str | None = None
+    relevance_explanation: str
+
+
+class SourceAttributionResponse(BaseModel):
+    """LLM response for source-claim attribution."""
+
+    attribution: Literal["direct", "paraphrase", "contradiction"]
+    reasoning: str
+
+
+class AttributionAssemblyResponse(BaseModel):
+    """LLM response for final attribution assembly."""
+
+    attribution: Literal["direct", "paraphrase", "contradiction", "not_found"]
+    summary: str
+    relies_on_secondary_only: bool
 
 
 # === Output Models ===

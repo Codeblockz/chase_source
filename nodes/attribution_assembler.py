@@ -2,14 +2,15 @@
 Attribution assembly node.
 """
 
-import json
 import logging
 
-from openai import OpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 
 from config import settings
 from prompts.templates import ATTRIBUTION_ASSEMBLY_SYSTEM, ATTRIBUTION_ASSEMBLY_USER
 from schemas.models import (
+    AttributionAssemblyResponse,
     AttributionType,
     EvidenceAssessment,
     GraphState,
@@ -18,7 +19,20 @@ from schemas.models import (
 )
 
 logger = logging.getLogger(__name__)
-client = OpenAI(api_key=settings.openai_api_key)
+
+llm = ChatOpenAI(
+    model=settings.openai_model,
+    temperature=0.0,
+    api_key=settings.openai_api_key,
+)
+structured_llm = llm.with_structured_output(AttributionAssemblyResponse)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", ATTRIBUTION_ASSEMBLY_SYSTEM),
+    ("user", ATTRIBUTION_ASSEMBLY_USER),
+])
+
+chain = prompt | structured_llm
 
 
 def format_assessments_for_prompt(assessments: list[EvidenceAssessment]) -> str:
@@ -115,32 +129,19 @@ def assemble_attribution(state: GraphState) -> GraphState:
     assessments_text = format_assessments_for_prompt(assessments)
 
     try:
-        response = client.chat.completions.create(
-            model=settings.openai_model,
-            temperature=0.0,
-            max_tokens=1500,
-            messages=[
-                {"role": "system", "content": ATTRIBUTION_ASSEMBLY_SYSTEM},
-                {
-                    "role": "user",
-                    "content": ATTRIBUTION_ASSEMBLY_USER.format(
-                        claim=claim.claim, source_assessments=assessments_text
-                    ),
-                },
-            ],
-            response_format={"type": "json_object"},
-        )
-
-        llm_result = json.loads(response.choices[0].message.content)
+        llm_result: AttributionAssemblyResponse = chain.invoke({
+            "claim": claim.claim,
+            "source_assessments": assessments_text,
+        })
 
         result = SourceAttribution(
             claim=claim.claim,
-            attribution=AttributionType(llm_result["attribution"]),
-            summary=llm_result["summary"],
+            attribution=AttributionType(llm_result.attribution),
+            summary=llm_result.summary,
             evidence_list=assessments,
             best_source=best_source,
             relies_on_secondary_only=relies_on_secondary
-            or llm_result.get("relies_on_secondary_only", False),
+            or llm_result.relies_on_secondary_only,
         )
 
         logger.info(f"Final attribution: {result.attribution.value}")

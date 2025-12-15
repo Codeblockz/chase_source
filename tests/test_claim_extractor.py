@@ -2,35 +2,23 @@
 Unit tests for claim extraction node.
 """
 
-import json
-
 import pytest
 from unittest.mock import patch
 
 from nodes.claim_extractor import extract_claim
-from tests.conftest import create_mock_openai_response
+from schemas.models import ClaimExtractionResponse
 
 
 class TestClaimExtractor:
     """Tests for claim extraction."""
 
     @pytest.mark.unit
-    def test_extracts_factual_claim(self, sample_input_text, initial_graph_state):
+    def test_extracts_factual_claim(
+        self, sample_input_text, initial_graph_state, mock_claim_extraction_success
+    ):
         """Should extract a factual claim from text with facts."""
-        mock_response = create_mock_openai_response(
-            json.dumps(
-                {
-                    "claim": "Tesla delivered approximately 1.81 million vehicles in 2023.",
-                    "original_context": "the company delivered approximately 1.81 million vehicles in 2023",
-                    "extraction_confidence": "high",
-                    "extraction_notes": None,
-                    "extraction_failed": False,
-                }
-            )
-        )
-
-        with patch("nodes.claim_extractor.client") as mock_client:
-            mock_client.chat.completions.create.return_value = mock_response
+        with patch("nodes.claim_extractor.chain") as mock_chain:
+            mock_chain.invoke.return_value = mock_claim_extraction_success
 
             state = {**initial_graph_state, "input_text": sample_input_text}
             result = extract_claim(state)
@@ -41,22 +29,12 @@ class TestClaimExtractor:
             assert result["extracted_claim"].extraction_confidence == "high"
 
     @pytest.mark.unit
-    def test_handles_opinion_only_text(self, sample_opinion_text, initial_graph_state):
+    def test_handles_opinion_only_text(
+        self, sample_opinion_text, initial_graph_state, mock_claim_extraction_failed
+    ):
         """Should return extraction_failed for opinion-only text."""
-        mock_response = create_mock_openai_response(
-            json.dumps(
-                {
-                    "claim": None,
-                    "original_context": None,
-                    "extraction_confidence": None,
-                    "extraction_notes": "No verifiable factual claims found.",
-                    "extraction_failed": True,
-                }
-            )
-        )
-
-        with patch("nodes.claim_extractor.client") as mock_client:
-            mock_client.chat.completions.create.return_value = mock_response
+        with patch("nodes.claim_extractor.chain") as mock_chain:
+            mock_chain.invoke.return_value = mock_claim_extraction_failed
 
             state = {**initial_graph_state, "input_text": sample_opinion_text}
             result = extract_claim(state)
@@ -68,8 +46,8 @@ class TestClaimExtractor:
     @pytest.mark.unit
     def test_handles_api_error(self, initial_graph_state):
         """Should gracefully handle API errors."""
-        with patch("nodes.claim_extractor.client") as mock_client:
-            mock_client.chat.completions.create.side_effect = Exception("API Error")
+        with patch("nodes.claim_extractor.chain") as mock_chain:
+            mock_chain.invoke.side_effect = Exception("API Error")
 
             state = {**initial_graph_state, "input_text": "Some text"}
             result = extract_claim(state)
@@ -79,12 +57,10 @@ class TestClaimExtractor:
             assert len(result["errors"]) > 0
 
     @pytest.mark.unit
-    def test_handles_malformed_json(self, initial_graph_state):
-        """Should handle malformed JSON from API."""
-        mock_response = create_mock_openai_response("not valid json")
-
-        with patch("nodes.claim_extractor.client") as mock_client:
-            mock_client.chat.completions.create.return_value = mock_response
+    def test_handles_malformed_response(self, initial_graph_state):
+        """Should handle unexpected response from chain."""
+        with patch("nodes.claim_extractor.chain") as mock_chain:
+            mock_chain.invoke.side_effect = Exception("Validation error")
 
             state = {**initial_graph_state, "input_text": "Some text"}
             result = extract_claim(state)

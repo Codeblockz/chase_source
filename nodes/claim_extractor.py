@@ -2,17 +2,30 @@
 Claim extraction node.
 """
 
-import json
 import logging
 
-from openai import OpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 
 from config import settings
 from prompts.templates import CLAIM_EXTRACTION_SYSTEM, CLAIM_EXTRACTION_USER
-from schemas.models import ExtractedClaim, GraphState
+from schemas.models import ClaimExtractionResponse, ExtractedClaim, GraphState
 
 logger = logging.getLogger(__name__)
-client = OpenAI(api_key=settings.openai_api_key)
+
+llm = ChatOpenAI(
+    model=settings.openai_model,
+    temperature=0.0,
+    api_key=settings.openai_api_key,
+)
+structured_llm = llm.with_structured_output(ClaimExtractionResponse)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", CLAIM_EXTRACTION_SYSTEM),
+    ("user", CLAIM_EXTRACTION_USER),
+])
+
+chain = prompt | structured_llm
 
 
 def extract_claim(state: GraphState) -> GraphState:
@@ -29,36 +42,22 @@ def extract_claim(state: GraphState) -> GraphState:
     logger.info(f"Extracting claim from {len(input_text)} chars")
 
     try:
-        response = client.chat.completions.create(
-            model=settings.openai_model,
-            temperature=0.0,
-            max_tokens=1000,
-            messages=[
-                {"role": "system", "content": CLAIM_EXTRACTION_SYSTEM},
-                {
-                    "role": "user",
-                    "content": CLAIM_EXTRACTION_USER.format(input_text=input_text),
-                },
-            ],
-            response_format={"type": "json_object"},
-        )
+        result: ClaimExtractionResponse = chain.invoke({"input_text": input_text})
 
-        result = json.loads(response.choices[0].message.content)
-
-        if result.get("extraction_failed", False):
-            logger.warning(f"Extraction failed: {result.get('extraction_notes')}")
+        if result.extraction_failed:
+            logger.warning(f"Extraction failed: {result.extraction_notes}")
             return {
                 **state,
                 "extracted_claim": None,
                 "extraction_failed": True,
-                "extraction_error": result.get("extraction_notes"),
+                "extraction_error": result.extraction_notes,
             }
 
         claim = ExtractedClaim(
-            claim=result["claim"],
-            original_context=result["original_context"],
-            extraction_confidence=result["extraction_confidence"],
-            extraction_notes=result.get("extraction_notes"),
+            claim=result.claim,
+            original_context=result.original_context,
+            extraction_confidence=result.extraction_confidence,
+            extraction_notes=result.extraction_notes,
         )
 
         logger.info(f"Extracted claim: {claim.claim}")

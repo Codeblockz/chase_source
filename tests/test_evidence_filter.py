@@ -2,14 +2,15 @@
 Unit tests for evidence filtering node.
 """
 
-import json
-
 import pytest
 from unittest.mock import patch
 
 from nodes.evidence_filter import filter_evidence
-from schemas.models import SearchResult
-from tests.conftest import create_mock_openai_response
+from schemas.models import (
+    EvidenceRelevanceResponse,
+    SearchResult,
+    SourceClassificationResponse,
+)
 
 
 class TestEvidenceFilter:
@@ -17,49 +18,30 @@ class TestEvidenceFilter:
 
     @pytest.mark.unit
     def test_filters_relevant_evidence(
-        self, sample_extracted_claim, sample_search_results, initial_graph_state
+        self,
+        sample_extracted_claim,
+        sample_search_results,
+        initial_graph_state,
+        mock_relevance_response,
+        mock_classification_response,
     ):
         """Should filter and extract relevant evidence."""
-        # Mock relevance assessment - high relevance
-        relevance_response = create_mock_openai_response(
-            json.dumps(
-                {
-                    "is_relevant": True,
-                    "relevance_score": 0.95,
-                    "verbatim_quote": "Tesla delivered approximately 1.81 million vehicles.",
-                    "relevance_explanation": "Direct statement of delivery numbers.",
-                }
-            )
+        low_relevance = EvidenceRelevanceResponse(
+            is_relevant=False,
+            relevance_score=0.2,
+            verbatim_quote=None,
+            relevance_explanation="Not relevant.",
         )
 
-        # Mock source classification
-        classification_response = create_mock_openai_response(
-            json.dumps({"source_type": "primary", "reasoning": "Official Tesla source"})
-        )
-
-        # Low relevance response
-        low_relevance_response = create_mock_openai_response(
-            json.dumps(
-                {
-                    "is_relevant": False,
-                    "relevance_score": 0.2,
-                    "verbatim_quote": None,
-                    "relevance_explanation": "Not relevant.",
-                }
-            )
-        )
-
-        with patch("nodes.evidence_filter.client") as mock_client:
+        with patch("nodes.evidence_filter.relevance_chain") as mock_rel, \
+             patch("nodes.evidence_filter.classification_chain") as mock_class:
             # Return different responses for different calls
-            mock_client.chat.completions.create.side_effect = [
-                relevance_response,
-                classification_response,
-                # For second result
-                relevance_response,
-                classification_response,
-                # For third result (low relevance)
-                low_relevance_response,
+            mock_rel.invoke.side_effect = [
+                mock_relevance_response,
+                mock_relevance_response,
+                low_relevance,
             ]
+            mock_class.invoke.return_value = mock_classification_response
 
             state = {
                 **initial_graph_state,
@@ -88,7 +70,11 @@ class TestEvidenceFilter:
 
     @pytest.mark.unit
     def test_limits_to_five_evidence_items(
-        self, sample_extracted_claim, initial_graph_state
+        self,
+        sample_extracted_claim,
+        initial_graph_state,
+        mock_relevance_response,
+        mock_classification_response,
     ):
         """Should limit evidence to maximum 5 items."""
         # Create 10 search results
@@ -103,26 +89,10 @@ class TestEvidenceFilter:
                 )
             )
 
-        relevance_response = create_mock_openai_response(
-            json.dumps(
-                {
-                    "is_relevant": True,
-                    "relevance_score": 0.9,
-                    "verbatim_quote": "Relevant quote about deliveries.",
-                    "relevance_explanation": "Relevant.",
-                }
-            )
-        )
-        classification_response = create_mock_openai_response(
-            json.dumps({"source_type": "secondary", "reasoning": "News article"})
-        )
-
-        with patch("nodes.evidence_filter.client") as mock_client:
-            # Alternate between relevance and classification responses
-            responses = []
-            for _ in range(10):
-                responses.extend([relevance_response, classification_response])
-            mock_client.chat.completions.create.side_effect = responses
+        with patch("nodes.evidence_filter.relevance_chain") as mock_rel, \
+             patch("nodes.evidence_filter.classification_chain") as mock_class:
+            mock_rel.invoke.return_value = mock_relevance_response
+            mock_class.invoke.return_value = mock_classification_response
 
             state = {
                 **initial_graph_state,

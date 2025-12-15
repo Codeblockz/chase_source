@@ -2,10 +2,10 @@
 Evidence filtering node.
 """
 
-import json
 import logging
 
-from openai import OpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 
 from config import settings
 from prompts.templates import (
@@ -14,59 +14,63 @@ from prompts.templates import (
     SOURCE_CLASSIFICATION_SYSTEM,
     SOURCE_CLASSIFICATION_USER,
 )
-from schemas.models import Evidence, GraphState, SearchResult, SourceType
+from schemas.models import (
+    Evidence,
+    EvidenceRelevanceResponse,
+    GraphState,
+    SearchResult,
+    SourceClassificationResponse,
+    SourceType,
+)
 
 logger = logging.getLogger(__name__)
-client = OpenAI(api_key=settings.openai_api_key)
+
+llm = ChatOpenAI(
+    model=settings.openai_model,
+    temperature=0.0,
+    api_key=settings.openai_api_key,
+)
+
+# Classification chain
+classification_llm = llm.with_structured_output(SourceClassificationResponse)
+classification_prompt = ChatPromptTemplate.from_messages([
+    ("system", SOURCE_CLASSIFICATION_SYSTEM),
+    ("user", SOURCE_CLASSIFICATION_USER),
+])
+classification_chain = classification_prompt | classification_llm
+
+# Relevance chain
+relevance_llm = llm.with_structured_output(EvidenceRelevanceResponse)
+relevance_prompt = ChatPromptTemplate.from_messages([
+    ("system", EVIDENCE_RELEVANCE_SYSTEM),
+    ("user", EVIDENCE_RELEVANCE_USER),
+])
+relevance_chain = relevance_prompt | relevance_llm
 
 
 def classify_source(url: str, title: str, content: str) -> SourceType:
     """Classify source type using LLM."""
     try:
-        response = client.chat.completions.create(
-            model=settings.openai_model,
-            temperature=0.0,
-            max_tokens=500,
-            messages=[
-                {"role": "system", "content": SOURCE_CLASSIFICATION_SYSTEM},
-                {
-                    "role": "user",
-                    "content": SOURCE_CLASSIFICATION_USER.format(
-                        url=url, title=title, content=content[:1000]
-                    ),
-                },
-            ],
-            response_format={"type": "json_object"},
-        )
-        result = json.loads(response.choices[0].message.content)
-        return SourceType(result.get("source_type", "unknown"))
+        result: SourceClassificationResponse = classification_chain.invoke({
+            "url": url,
+            "title": title,
+            "content": content[:1000],
+        })
+        return SourceType(result.source_type)
     except Exception as e:
         logger.warning(f"Source classification failed: {e}")
         return SourceType.UNKNOWN
 
 
-def assess_relevance(claim: str, result: SearchResult) -> dict | None:
+def assess_relevance(claim: str, result: SearchResult) -> EvidenceRelevanceResponse | None:
     """Assess relevance and extract evidence from a search result."""
     try:
-        response = client.chat.completions.create(
-            model=settings.openai_model,
-            temperature=0.0,
-            max_tokens=1500,
-            messages=[
-                {"role": "system", "content": EVIDENCE_RELEVANCE_SYSTEM},
-                {
-                    "role": "user",
-                    "content": EVIDENCE_RELEVANCE_USER.format(
-                        claim=claim,
-                        url=str(result.url),
-                        title=result.title,
-                        content=result.content[:3000],
-                    ),
-                },
-            ],
-            response_format={"type": "json_object"},
-        )
-        return json.loads(response.choices[0].message.content)
+        return relevance_chain.invoke({
+            "claim": claim,
+            "url": str(result.url),
+            "title": result.title,
+            "content": result.content[:3000],
+        })
     except Exception as e:
         logger.warning(f"Relevance assessment failed: {e}")
         return None
@@ -98,12 +102,16 @@ def filter_evidence(state: GraphState) -> GraphState:
         if not assessment:
             continue
 
-        if not assessment.get("is_relevant", False):
+        if not assessment.is_relevant:
             logger.debug(f"Filtered out: {result.title} (not relevant)")
             continue
 
-        if assessment.get("relevance_score", 0) < 0.5:
+        if assessment.relevance_score < 0.5:
             logger.debug(f"Filtered out: {result.title} (low score)")
+            continue
+
+        if not assessment.verbatim_quote:
+            logger.debug(f"Filtered out: {result.title} (no quote)")
             continue
 
         # Classify source type
@@ -115,9 +123,9 @@ def filter_evidence(state: GraphState) -> GraphState:
                 source_url=result.url,
                 source_title=result.title,
                 source_type=source_type,
-                verbatim_quote=assessment["verbatim_quote"],
-                relevance_score=assessment["relevance_score"],
-                relevance_explanation=assessment["relevance_explanation"],
+                verbatim_quote=assessment.verbatim_quote,
+                relevance_score=assessment.relevance_score,
+                relevance_explanation=assessment.relevance_explanation,
             )
             evidence_list.append(evidence)
             logger.info(f"Found evidence: {result.title} ({source_type.value})")

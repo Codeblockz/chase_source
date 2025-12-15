@@ -6,32 +6,20 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from schemas.models import (
+    AttributionAssemblyResponse,
     AttributionType,
+    ClaimExtractionResponse,
     Evidence,
     EvidenceAssessment,
+    EvidenceRelevanceResponse,
     ExtractedClaim,
     GraphState,
     SearchResult,
     SourceAttribution,
+    SourceAttributionResponse,
+    SourceClassificationResponse,
     SourceType,
 )
-
-
-# === Mock API Clients ===
-
-
-@pytest.fixture
-def mock_openai_client():
-    """Mock OpenAI client that returns controllable responses."""
-    with patch("nodes.claim_extractor.client") as mock:
-        yield mock
-
-
-@pytest.fixture
-def mock_tavily_client():
-    """Mock Tavily client that returns controllable responses."""
-    with patch("nodes.source_retriever.tavily") as mock:
-        yield mock
 
 
 # === Sample Data Fixtures ===
@@ -169,15 +157,73 @@ def initial_graph_state():
     )
 
 
-# === Mock Response Helpers ===
+# === Mock Response Fixtures ===
 
 
-def create_mock_openai_response(content: str):
-    """Create a mock OpenAI API response."""
-    mock_response = MagicMock()
-    mock_response.choices = [MagicMock()]
-    mock_response.choices[0].message.content = content
-    return mock_response
+@pytest.fixture
+def mock_claim_extraction_success():
+    """Mock successful claim extraction response."""
+    return ClaimExtractionResponse(
+        claim="Tesla delivered approximately 1.81 million vehicles in 2023.",
+        original_context="the company delivered approximately 1.81 million vehicles in 2023",
+        extraction_confidence="high",
+        extraction_notes=None,
+        extraction_failed=False,
+    )
+
+
+@pytest.fixture
+def mock_claim_extraction_failed():
+    """Mock failed claim extraction response."""
+    return ClaimExtractionResponse(
+        claim=None,
+        original_context=None,
+        extraction_confidence=None,
+        extraction_notes="No verifiable factual claims found.",
+        extraction_failed=True,
+    )
+
+
+@pytest.fixture
+def mock_relevance_response():
+    """Mock relevance assessment response."""
+    return EvidenceRelevanceResponse(
+        is_relevant=True,
+        relevance_score=0.95,
+        verbatim_quote="Tesla delivered approximately 1.81 million vehicles.",
+        relevance_explanation="Direct statement of delivery numbers.",
+    )
+
+
+@pytest.fixture
+def mock_classification_response():
+    """Mock source classification response."""
+    return SourceClassificationResponse(
+        source_type="primary",
+        reasoning="Official Tesla source",
+    )
+
+
+@pytest.fixture
+def mock_attribution_response():
+    """Mock source attribution response."""
+    return SourceAttributionResponse(
+        attribution="direct",
+        reasoning="Official source confirms the claim.",
+    )
+
+
+@pytest.fixture
+def mock_assembly_response():
+    """Mock attribution assembly response."""
+    return AttributionAssemblyResponse(
+        attribution="direct",
+        summary="Evidence directly supports the claim.",
+        relies_on_secondary_only=False,
+    )
+
+
+# === Mock Tavily Response Helper ===
 
 
 def create_mock_tavily_response(results: list[dict]):
