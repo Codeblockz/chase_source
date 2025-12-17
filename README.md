@@ -19,12 +19,9 @@ Chase the Source solves this by automatically finding and comparing original sou
 
 ## How It Works
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  User pastes    │────▶│  System finds   │────▶│  System shows   │
-│  text with a    │     │  original       │     │  how sources    │
-│  factual claim  │     │  sources        │     │  relate to claim│
-└─────────────────┘     └─────────────────┘     └─────────────────┘
+```mermaid
+flowchart LR
+    A[User pastes text<br>with a factual claim] --> B[System finds<br>original sources] --> C[System shows how<br>sources relate to claim]
 ```
 
 ### Attribution Categories
@@ -113,27 +110,16 @@ docker run -p 7860:7860 --env-file .env chase-the-source
 
 ## Architecture
 
-```
-                           LangGraph Workflow
-┌──────────────────────────────────────────────────────────────────┐
-│                                                                  │
-│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐          │
-│  │ Claim   │──▶│ Source  │──▶│Evidence │──▶│ Source  │          │
-│  │Extractor│   │Retriever│   │ Filter  │   │Comparer │          │
-│  └─────────┘   └─────────┘   └─────────┘   └─────────┘          │
-│       │                                          │               │
-│       │                                          ▼               │
-│       │                                   ┌───────────┐          │
-│       └──────────────────────────────────▶│Attribution│          │
-│              (if no claim found)          │ Assembler │          │
-│                                           └───────────┘          │
-└──────────────────────────────────────────────────────────────────┘
-                    │                              │
-                    ▼                              ▼
-            ┌──────────────┐              ┌──────────────┐
-            │  OpenAI API  │              │  Tavily API  │
-            │ (GPT-5-mini) │              │   (Search)   │
-            └──────────────┘              └──────────────┘
+```mermaid
+flowchart LR
+    subgraph LangGraph Workflow
+        direction LR
+        CE[Claim Extractor] --> SR[(Source Retriever)]
+        SR --> EF[Evidence Filter]
+        EF --> SC[Source Comparer]
+        SC --> AA[[Attribution Assembler]]
+        CE -->|no claim found| AA
+    end
 ```
 
 ### Pipeline Stages
