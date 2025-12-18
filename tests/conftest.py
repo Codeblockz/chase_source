@@ -145,6 +145,7 @@ def initial_graph_state():
     """Empty initial graph state."""
     return GraphState(
         input_text="",
+        input_source_url=None,
         extracted_claim=None,
         extraction_failed=False,
         extraction_error=None,

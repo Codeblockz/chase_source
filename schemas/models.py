@@ -143,6 +143,7 @@ class SourceAttribution(BaseModel):
 
 class GraphState(TypedDict):
     input_text: str
+    input_source_url: str | None
     extracted_claim: ExtractedClaim | None
     extraction_failed: bool
     extraction_error: str | None

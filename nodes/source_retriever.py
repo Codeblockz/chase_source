@@ -3,6 +3,7 @@ Source retrieval node using Tavily.
 """
 
 import logging
+from urllib.parse import urlparse
 
 from tavily import TavilyClient
 
@@ -28,6 +29,14 @@ def retrieve_sources(state: GraphState) -> GraphState:
         logger.warning("No claim to search for")
         return {**state, "search_results": [], "search_query": None}
 
+    # Optional exclusion of the input source domain to reduce self-sourcing
+    input_source_url = state.get("input_source_url")
+    excluded_host = None
+    if input_source_url:
+        excluded_host = urlparse(str(input_source_url)).hostname
+        if excluded_host:
+            excluded_host = excluded_host.lower()
+
     # Build search query from claim
     search_query = claim.claim
     logger.info(f"Searching Tavily: {search_query}")
@@ -46,12 +55,18 @@ def retrieve_sources(state: GraphState) -> GraphState:
         for item in response.get("results", []):
             try:
                 url = item["url"]
+                hostname = urlparse(url).hostname or ""
 
                 # Skip duplicate URLs
                 if url in seen_urls:
                     logger.debug(f"Skipping duplicate URL: {url}")
                     continue
                 seen_urls.add(url)
+
+                # Skip same-domain as input source to avoid self-citation
+                if excluded_host and hostname.lower().endswith(excluded_host):
+                    logger.debug(f"Skipping self-source domain: {hostname}")
+                    continue
 
                 result = SearchResult(
                     url=url,
