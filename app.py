@@ -83,12 +83,13 @@ def format_attribution_output(result: SourceAttribution) -> tuple[str, str, str]
     return claim_text, attribution_text, sources_text
 
 
-def process_input(text: str) -> tuple[str, str, str]:
+def process_input(text: str, source_url: str | None = None) -> tuple[str, str, str]:
     """
     Process user input through the source attribution pipeline.
 
     Args:
         text: User-provided text to analyze
+        source_url: Optional URL of the page the text came from (to avoid self-sourcing)
 
     Returns:
         Tuple of (claim, attribution, sources) formatted strings
@@ -96,10 +97,10 @@ def process_input(text: str) -> tuple[str, str, str]:
     if not text or len(text.strip()) < 10:
         return ("**Error:** Please provide at least 10 characters of text.", "", "")
 
-    logger.info(f"Processing input: {len(text)} characters")
+    logger.info(f"Processing input: {len(text)} characters; source_url provided={bool(source_url)}")
 
     try:
-        result = run_source_check(text)
+        result = run_source_check(text, source_url)
         attribution = result.get("result")
 
         if not attribution:
@@ -130,6 +131,11 @@ with gr.Blocks(title="Chase the Source", theme=gr.themes.Soft()) as app:
             lines=5,
             max_lines=10,
         )
+        source_url = gr.Textbox(
+            label="Origin URL (optional)",
+            placeholder="Paste the URL the text came from to avoid self-citation",
+            lines=1,
+        )
 
     submit_btn = gr.Button("Chase the Source", variant="primary")
 
@@ -143,8 +149,9 @@ with gr.Blocks(title="Chase the Source", theme=gr.themes.Soft()) as app:
 
     submit_btn.click(
         fn=process_input,
-        inputs=[input_text],
+        inputs=[input_text, source_url],
         outputs=[claim_output, attribution_output, sources_output],
+        show_progress="full",
     )
 
     gr.Markdown(

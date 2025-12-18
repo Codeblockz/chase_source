@@ -57,10 +57,11 @@ def build_graph() -> StateGraph:
 graph = build_graph()
 
 
-def run_source_check(input_text: str) -> GraphState:
+def run_source_check(input_text: str, input_source_url: str | None = None) -> GraphState:
     """Execute the source attribution pipeline."""
     initial_state: GraphState = {
         "input_text": input_text,
+        "input_source_url": input_source_url,
         "extracted_claim": None,
         "extraction_failed": False,
         "extraction_error": None,
