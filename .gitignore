@@ -2,6 +2,7 @@
 .env
 venv/
 .venv/
+.auditenv/
 
 # Python
 __pycache__/
