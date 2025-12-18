@@ -78,6 +78,26 @@ async def assess_and_classify(claim: str, result: SearchResult) -> Evidence | No
             logger.debug(f"Filtered out: {result.title} (low score)")
             return None
 
+        # Ensure the quote is actually present (or substantially present) in the retrieved content to prevent hallucinated quotes
+        quote = relevance_result.verbatim_quote
+        source_text = (result.raw_content or result.content or "").lower()
+        if quote:
+            normalized_quote = quote.strip().lower()
+            if normalized_quote not in source_text:
+                # Allow minor wording differences: require at least 60% token overlap
+                q_tokens = normalized_quote.split()
+                if q_tokens:
+                    overlap = sum(1 for t in q_tokens if t in source_text.split()) / len(
+                        q_tokens
+                    )
+                else:
+                    overlap = 0
+                if overlap < 0.6:
+                    logger.debug(
+                        f"Filtered out: {result.title} (quote not found verbatim in source)"
+                    )
+                    relevance_result.verbatim_quote = None
+
         if not relevance_result.verbatim_quote:
             logger.debug(f"Filtered out: {result.title} (no quote)")
             return None
