@@ -118,33 +118,33 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
 ```
 # Core framework
-langgraph>=0.2.0
-langchain>=0.3.0
-langchain-openai>=0.2.0
+langgraph>=1.0.5
+langchain>=1.2.0
+langchain-openai>=1.1.3
 
 # Web search
-tavily-python>=0.5.0
+tavily-python>=0.7.15
 
 # UI
-gradio>=5.0.0
+gradio>=6.1.0
 
 # Data validation
-pydantic>=2.0.0
+pydantic>=2.7.4,<=2.12.4
 pydantic-settings>=2.0.0
 
 # Environment management
-python-dotenv>=1.0.0
+python-dotenv>=1.2.1
 
 # HTTP client
-httpx>=0.27.0
+httpx>=0.28.1
 
 # Development
-pytest>=8.0.0
-pytest-asyncio>=0.24.0
-pytest-cov>=5.0.0
+pytest>=9.0.2
+pytest-asyncio>=1.3.0
+pytest-cov>=7.0.0
 
 # Type checking (optional)
-mypy>=1.11.0
+mypy>=1.19.1
 ```
 
 ---
